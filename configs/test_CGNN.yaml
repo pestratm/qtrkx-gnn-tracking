@@ -1,20 +1,21 @@
-train_dir   : 'data/train'
-valid_dir   : 'data/valid'
-dataset     : 'mu200_1pT'
+train_dir   : '/media/peter/Daten/GNN/Data/PbPb/MC/eventfiles/train'
+valid_dir   : '/media/peter/Daten/GNN/Data/PbPb/MC/eventfiles/valid'
+dataset     : 'alicetrd'
+dims        : 3
 log_dir     : 'logs/test_CGNN/'
 run_type    : 'new_run'
 gpu         : '-1'
-n_files     : 100
-n_valid     : 50
-n_train     : 50
+n_files     : 1049
+n_valid     : 49
+n_train     : 1000
 lr_c        : 0.01
-batch_size  : 1
-n_iters     : 3
+batch_size  : 25
+n_iters     : 5
 n_epoch     : 30
 TEST_every  : 50
-hid_dim     : 4
+hid_dim     : 32
 network     : 'CGNN'
 optimizer: 'Adam'
 loss_func: 'BinaryCrossentropy'
 n_thread    : 4
-log_verbosity: 2
+log_verbosity: 3

@@ -36,10 +36,12 @@ def test(config, model, test_type):
         X, Ri, Ro, y = valid_data[n]
 
         if n == 0:
-            preds = model([map2angle(X), Ri, Ro])
+            #preds = model([map2angle(X), Ri, Ro])
+            preds = model([X, Ri, Ro])
             labels = y
         else:	
-            out = model([map2angle(X), Ri, Ro])
+            #out = model([map2angle(X), Ri, Ro])
+            out = model([X, Ri, Ro])
             preds  = tf.concat([preds, out], axis=0)
             labels = tf.concat([labels, y], axis=0)
 
@@ -61,7 +63,7 @@ def test(config, model, test_type):
     # efficency, purity etc.
     labels = labels.numpy()
     preds  = preds.numpy()
-
+    print("ctest")
     #n_edges = labels.shape[0]
     #n_class = [n_edges - sum(labels), sum(labels)]
 

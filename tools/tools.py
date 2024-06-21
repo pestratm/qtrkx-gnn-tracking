@@ -31,10 +31,14 @@ def load_graph(filename):
         return sparse_to_graph(**dict(f.items()))
 def sparse_to_graph(X, Ri_rows, Ri_cols, Ro_rows, Ro_cols, y, dtype=np.float32):
     n_nodes, n_edges = X.shape[0], Ri_rows.shape[0]
-    Ri = np.zeros((n_nodes, n_edges), dtype=dtype)
-    Ro = np.zeros((n_nodes, n_edges), dtype=dtype)
-    Ri[Ri_rows, Ri_cols] = 1
-    Ro[Ro_rows, Ro_cols] = 1
+    Ri_indices = np.vstack((Ri_rows, Ri_cols)).T
+    Ro_indices = np.vstack((Ro_rows, Ro_cols)).T
+    Ri = tf.sparse.SparseTensor(indices=Ri_indices, values=[dtype(1.0) for i in range(n_edges)], dense_shape=[n_nodes, n_edges])
+    Ro = tf.sparse.SparseTensor(indices=Ro_indices, values=[dtype(1.0) for i in range(n_edges)], dense_shape=[n_nodes, n_edges])
+    #Ri = np.zeros((n_nodes, n_edges), dtype=dtype)
+    #Ro = np.zeros((n_nodes, n_edges), dtype=dtype)
+    #Ri[Ri_rows, Ri_cols] = 1
+    #Ro[Ro_rows, Ro_cols] = 1
     return Graph(X, Ri, Ro, y)
 
 def parse_args():
@@ -110,14 +114,15 @@ def log_gradients(log_dir, gradients):
 
 def map2angle(arr0):
     # Mapping the cylindrical coordinates to [0,1]
+    
+
+    
     arr = np.zeros(arr0.shape, dtype=np.float32)
-    r_min     = 0.
-    r_max     = 1.1
-    arr[:,0] = (arr0[:,0]-r_min)/(r_max-r_min)    
-
-
-
+      
     if (tools.config['dataset'] == 'mu200') or (tools.config['dataset'] == 'mu200_full'):
+        r_min     = 0.
+        r_max     = 1.1
+        arr[:,0] = (arr0[:,0]-r_min)/(r_max-r_min)   
         phi_min   = -1.0
         phi_max   = 1.0
         arr[:,1]  = (arr0[:,1]-phi_min)/(phi_max-phi_min) 
@@ -126,6 +131,9 @@ def map2angle(arr0):
         arr[:,2]  = (np.abs(arr0[:,2])-z_min)/(z_max-z_min)  # take abs of z due to symmetry of z
 
     elif tools.config['dataset'] == 'mu200_1pT':
+        r_min     = 0.
+        r_max     = 1.1
+        arr[:,0] = (arr0[:,0]-r_min)/(r_max-r_min)   
         phi_max  = 1.
         phi_min  = -phi_max
         z_max    = 1.1
@@ -134,12 +142,33 @@ def map2angle(arr0):
         arr[:,2] = (arr0[:,2]-z_min)/(z_max-z_min) 
 
     elif (tools.config['dataset'] == 'mu10') or (tools.config['dataset'] == 'mu10_big'):
+        r_min     = 0.
+        r_max     = 1.1
+        arr[:,0] = (arr0[:,0]-r_min)/(r_max-r_min)   
         phi_min   = -1.0
         phi_max   = 1.0
         arr[:,1] = (arr0[:,1]-phi_min)/(phi_max-phi_min) 
         z_min     = -1.1
         z_max     = 1.1
-        arr[:,2] = (arr0[:,2]-z_min)/(z_max-z_min) 
+        arr[:,2] = (arr0[:,2]-z_min)/(z_max-z_min)
+ 
+    elif(tools.config['dataset'] == 'alicetrd'):
+        r_min = 300.5
+        r_max = 368.5
+        arr[:,0] = (arr0[:,0]-r_min)/(r_max-r_min)  
+        phi_min   = -np.pi
+        phi_max   = np.pi
+        arr[:,1]  = (arr0[:,1]-phi_min)/(phi_max-phi_min) 
+        z_min     = -338.5
+        z_max     = 347.
+        arr[:,2]  = (arr0[:,2]-z_min)/(z_max-z_min)
+        if(tools.config['dims']==5):
+            slope_min = 0
+            slope_max = np.pi
+            arr[:,3]  = (arr0[:,3]-slope_min)/(slope_max-slope_min)
+            tilt_min  = -2. * np.pi/180.
+            tilt_max  = 2. * np.pi/180.
+            arr[:,4]  = (arr0[:,4]-tilt_min)/(tilt_max-tilt_min)
 
     mapping_check(arr)
     return arr
@@ -171,7 +200,7 @@ def find_layer(arr):
         elif (arr[i,0] >= 6e-1) and (arr[i,0] < 7.5e-1):
             layers[i] = 7
         elif (arr[i,0] >= 7.5e-1) and (arr[i,0] < 9e-1):
-            layers[i] = 8
+            layers[i] = 80.9167, 1.1
         elif (arr[i,0] >= 9e-1) and (arr[i,0] < 10.5e-1):
             layers[i] = 9
         else:
@@ -179,7 +208,7 @@ def find_layer(arr):
     return layers
 
 def true_fake_weights(labels):
-    ''' 
+    ''' 0.9167, 1.1
     [weight of fake edges, weight of true edges]
     
     weights are calculated using scripts/print_dataset_specs.py
@@ -195,6 +224,8 @@ def true_fake_weights(labels):
         weight_list = [3.030203859885135, 0.5988062677334424]
     elif tools.config['dataset'] == 'mu10_big':
         weight_list = [0.9369978711656622, 1.0720851667609774]
+    elif tools.config['dataset'] == 'alicetrd':
+        weight_list = [0.50534269, 47.29293625]
     else:
         raise ValueError('dataset not defined')
 

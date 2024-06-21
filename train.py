@@ -1,5 +1,6 @@
 import sys
 import os
+import numpy as np
 # Turn off warnings and errors due to TF libraries
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  
 import time
@@ -10,24 +11,79 @@ import tensorflow as tf
 # import internal scripts
 from tools.tools import *
 from test import test
+from matplotlib import pyplot as plt
+plt.ion()
+import gc
+import psutil
 ###############################################################################
+#@tf.function
 def batch_train_step(n_step):
     '''combines multiple  graph inputs and executes a step on their mean'''
+
     with tf.GradientTape() as tape:
+
         for batch in range(config['batch_size']):
+
             X, Ri, Ro, y = train_data[
                 train_list[n_step*config['batch_size']+batch]
                 ]
-
             label = tf.reshape(tf.convert_to_tensor(y),shape=(y.shape[0],1))
             
             if batch==0:
                 # calculate weight for each edge to avoid class imbalance
                 weights = tf.convert_to_tensor(true_fake_weights(y))
+
                 # reshape weights
                 weights = tf.reshape(tf.convert_to_tensor(weights),
                                      shape=(weights.shape[0],1))
-                preds = model([map2angle(X),Ri,Ro])
+                #preds = model([map2angle(X),Ri,Ro])
+                preds = model([X,Ri,Ro])
+                preds_batch = preds
+                labels = label
+            else:
+                weight = tf.convert_to_tensor(true_fake_weights(y))
+                # reshape weights
+                weight = tf.reshape(tf.convert_to_tensor(weight),
+                                    shape=(weight.shape[0],1))
+                weights = tf.concat([weights, weight],axis=0)
+                #preds_batch = model([map2angle(X),Ri,Ro])
+                preds_batch = model([X,Ri,Ro])
+                preds = tf.concat([preds, preds_batch],axis=0)
+                labels = tf.concat([labels, label],axis=0)
+
+                tf.keras.backend.clear_session()
+                gc.collect()
+
+            #np.savez("/home/peter/Software/trd-standalone-tracking/Data/MC/predictions/predictions_batch%i.npy"%batch, X=X, Ri=Ri, Ro=Ro, y=label, preds=preds_batch)
+        loss_eval = loss_fn(labels, preds, sample_weight=weights)
+
+    grads = tape.gradient(loss_eval, model.trainable_variables)
+    opt.apply_gradients(zip(grads, model.trainable_variables))
+
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    return loss_eval, grads
+
+def valid():
+    '''combines multiple  graph inputs and executes a step on their mean'''
+    with tf.GradientTape() as tape:
+        for file in range(config['n_valid']):
+            X, Ri, Ro, y = valid_data[
+                valid_list[file]
+                ]
+
+            label = tf.reshape(tf.convert_to_tensor(y),shape=(y.shape[0],1))
+            
+            if file==0:
+                # calculate weight for each edge to avoid class imbalance
+                weights = tf.convert_to_tensor(true_fake_weights(y))
+                # reshape weights
+                weights = tf.reshape(tf.convert_to_tensor(weights),
+                                     shape=(weights.shape[0],1))
+                #preds = model([map2angle(X),Ri,Ro])
+                preds = model([X,Ri,Ro])
+                preds_batch = preds
                 labels = label
             else:
                 weight = tf.convert_to_tensor(true_fake_weights(y))
@@ -36,15 +92,15 @@ def batch_train_step(n_step):
                                     shape=(weight.shape[0],1))
 
                 weights = tf.concat([weights, weight],axis=0)
-                preds = tf.concat([preds, model([map2angle(X),Ri,Ro])],axis=0)
+                #preds_batch = model([map2angle(X),Ri,Ro])
+                preds_batch = model([X,Ri,Ro])
+                preds = tf.concat([preds, preds_batch],axis=0)
                 labels = tf.concat([labels, label],axis=0)
 
+            #np.savez("/home/peter/Software/trd-standalone-tracking/Data/MC/predictions/predictions_batch%i.npy"%batch, X=X, Ri=Ri, Ro=Ro, y=label, preds=preds_batch)
         loss_eval = loss_fn(labels, preds, sample_weight=weights)
 
-    grads = tape.gradient(loss_eval, model.trainable_variables)
-    opt.apply_gradients(zip(grads, model.trainable_variables))
-
-    return loss_eval, grads
+    return loss_eval
 
 if __name__ == '__main__':
     # Read config file
@@ -80,10 +136,13 @@ if __name__ == '__main__':
 
     # execute the model on an example data to test things
     X, Ri, Ro, y = train_data[0]
-    model([map2angle(X), Ri, Ro])
-
+    #model([map2angle(X), Ri, Ro])
+    model([X, Ri, Ro])
     # print model summary
     print(model.summary())
+
+    valid_data = get_dataset(config['valid_dir'], config['n_valid'])
+    valid_list = [i for i in range(config['n_valid'])]
 
     # Log initial parameters if new run
     if config['run_type'] == 'new_run':    
@@ -118,15 +177,27 @@ if __name__ == '__main__':
             )
 
     # Start training
+    fig, ax = plt.subplots()
+    epoch_losses = []
+    batch_losses = []
+    epoch_losses_valid = []
+    
     for epoch in range(epoch_start, config['n_epoch']):
+
         shuffle(train_list) # shuffle the order every epoch
+        batch_losses = []
 
         for n_step in range(config['n_train']//config['batch_size']):
+
             # start timer
             t0 = datetime.datetime.now()  
 
             # iterate a step
             loss_eval, grads = batch_train_step(n_step)
+            print(np.shape(loss_eval), np.shape(grads))
+            print("Memory usage before clearing: ", psutil.virtual_memory().percent)
+            batch_losses.append(loss_eval.numpy())
+            print("Memory usage after clearing: ", psutil.virtual_memory().percent)
                         
             # end timer
             dt = datetime.datetime.now() - t0  
@@ -160,6 +231,35 @@ if __name__ == '__main__':
             if (n_step+1)%config['TEST_every']==0:
                 test(config, model, 'valid')
                 test(config, model, 'train')
+        
+        epoch_losses_valid.append(valid())
 
+        if(len(batch_losses)==0):
+            epoch_loss = 0
+        else:
+            epoch_loss = sum(batch_losses) / len(batch_losses)
+        epoch_losses.append(epoch_loss)
+        
+        # Plot the epoch losses
+        ax.clear()  # Clear the previous plot
+        ax.plot(range(1, epoch+2), epoch_losses, label='Epoch Loss Training Set', marker='o', linestyle='-')
+        ax.plot(range(1, epoch+2), epoch_losses_valid, label='Epoch Loss Validation Set', marker='o', linestyle='-')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('Average Training Loss per Epoch')
+        ax.set_ylim(bottom=0)
+        ax.set_xlim([0, config['n_epoch']])
+        ax.legend()
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+        
+    plt.savefig("./pdf/graphs/losses.pdf")
+    plt.ioff()
+    for i in range(len(train_data)):   
+        X, Ri, Ro, y = train_data[i]
+        preds = model([X, Ri, Ro])
+        np.savez("/home/peter/Software/trd-standalone-tracking/Data/PbPb/MC/predictions/predictions_event%i"%i, X=X, Ri=Ri, Ro=Ro, y=y, preds=preds)
+    model.save("/home/peter/Software/trd-standalone-tracking/Data/PbPb/MC/trained_model")
+    model.save_weights("/home/peter/Software/trd-standalone-tracking/Data/PbPb/MC/trained_model/trained_model.h5")
     print(str(datetime.datetime.now()) + ': Training completed!')
 
